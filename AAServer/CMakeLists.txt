@@ -1,5 +1,12 @@
+# B"H
+
+
 cmake_minimum_required(VERSION 2.8)
 project (AAServer)
+
+add_subdirectory(/home/deepview/SSD/backward-cpp backward-cpp-build)
+include_directories(${CMAKE_SOURCE_DIR}/../include)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 

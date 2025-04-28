@@ -4,6 +4,7 @@
 
 #include "ChannelHandler.h"
 #include <vector>
+#include <set>
 
 class InputChannelHandler : public ChannelHandler {
   void sendHandshakeRequest();
