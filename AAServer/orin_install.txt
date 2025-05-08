@@ -1,11 +1,8 @@
 # B"H
 
-#sudo apt -yq install git u-boot-tools build-essential libncurses5-dev bison flex bc libboost1.74-all-dev libssl-dev libprotobuf-dev protobuf-compiler libgstreamer1.0-dev libconfig-dev 
-sudo apt -yq install git build-essential libncurses5-dev bison flex bc libboost1.74-all-dev libssl-dev libprotobuf-dev protobuf-compiler libgstreamer1.0-dev libconfig-dev 
+# adapted from https://github.com/tomasz-grobelny/AACS/blob/master/doc/INSTALL.md
 
-#apt -yq remove libsdl2-2.0-0 python3-distupgrade && rm -f /etc/pulse/default.pa && DEBIAN_FRONTEND=noninteractive
-#apt -yq install libsdl2-dev libsdl2-image-dev liblxc-dev libproperties-cpp-dev libsystemd-dev libcap-dev libgmock-dev python3-distupgrade ubuntu-release-upgrader-core ubuntu-desktop-minimal libxtst-dev adb gpsd gpsd-clients lightdm
-#apt -yq install gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad gstreamer1.0-libav tigervnc-scraping-server lxc-utils xfce4 libdw-dev mc clangd clang gpiod libfmt-dev
+sudo apt -yq install git build-essential libncurses5-dev bison flex bc libboost1.74-all-dev libssl-dev libprotobuf-dev protobuf-compiler libgstreamer1.0-dev libconfig-dev 
 
 sudo apt update
 sudo apt install libfmt-dev
