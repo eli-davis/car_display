@@ -16,6 +16,7 @@
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <cstdlib>
 
 using namespace std;
 using namespace boost::program_options;
@@ -30,6 +31,15 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char *argv[]) {
+    if (std::system("sudo modprobe libcomposite") != 0)
+        std::cout << "Failed to load libcomposite\n";
+
+    if (std::system("sudo modprobe usb_f_fs") != 0)
+        std::cout << "Failed to load usb_f_fs\n";
+
+    if (std::system("sudo modprobe usb_f_mass_storage") != 0)
+        std::cout << "Failed to load usb_f_mass_storage\n";
+
   options_description desc("Allowed options");
   desc.add_options()("help", "produce help message")(
       "dumpfile", value<string>(), "specify pcap dumpfile for communication");
@@ -49,9 +59,21 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, signal_handler);
   gst_init(&argc, &argv);
   Library lib(configFsBasePath);
+
+  cout << "(1) Library loaded for configFs" << endl;
+
   ModeSwitcher::handleSwitchToAccessoryMode(lib);
+
+  cout << "(2) Accessory mode active" << endl;
+
   AaCommunicator aac(lib, dumpfile);
+
+  cout << "(3) AaCommunicator active" << endl;
+
   aac.setup(Udc::getUdcById(lib, 0));
+
+  cout << "(4) AaCommunicator get Udc" << endl;
+
   mutex error_mutex;
   aac.error.connect([&](const std::exception &ex) {
     unique_lock ul(error_mutex);
@@ -63,6 +85,9 @@ int main(int argc, char *argv[]) {
     }
     mre.set();
   });
+
+  cout << "(4) AaCommunicator connect()" << endl;
+
   map<SocketClient *, int> clients;
   int hi = 0;
   aac.gotMessage.connect([&clients, &hi](int clientId, int channelNumber,

@@ -19,6 +19,7 @@ MassStorageFunction::MassStorageFunction(const Gadget &gadget,
       .nofua = 0,
       .removable = 1,
       .file = lun.c_str(),
+      .inquiry_string = "generic_file_descriptor",
   }};
 
   struct usbg_f_ms_lun_attrs *f_ms_luns[] = {

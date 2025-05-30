@@ -71,6 +71,8 @@ void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
   auto udc = Udc::getUdcById(lib, 0);
   initialGadget.enable(udc);
 
+  std::cout << "    ModeSwitcher: gadget enabled" << std::endl;
+
   auto eSize = sizeof(struct usb_functionfs_event);
   auto bufSize = 4 * eSize;
   uint8_t buffer[bufSize];
