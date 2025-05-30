@@ -17,6 +17,21 @@
 #include <iostream>
 #include <linux/usb/functionfs.h>
 #include <unistd.h>
+#include <csignal>
+
+static volatile sig_atomic_t stopFlag = 0;
+static int fdGlobal = -1;
+
+static void signalHandler(int) {
+  stopFlag = 1;
+ if (fdGlobal != -1) {
+    std::cout << "\nSIGINT caught: closing fd..." << std::endl;
+    close(fdGlobal);
+    fdGlobal = -1;
+  }
+
+}
+
 
 ssize_t ModeSwitcher::handleSwitchMessage(int fd, const void *buf,
                                           size_t nbytes) {
@@ -24,7 +39,17 @@ ssize_t ModeSwitcher::handleSwitchMessage(int fd, const void *buf,
   for (size_t n = nbytes / sizeof *event; n; --n, ++event) {
     if (event->type == FUNCTIONFS_SETUP) {
       const struct usb_ctrlrequest &setup = event->u.setup;
-      if (setup.bRequest == 51) {
+
+      std::cout << "USB SETUP: "
+          << "bmRequestType=0x" << std::hex << (int)setup.bRequestType << " "
+          << "bRequest=0x"     << (int)setup.bRequest     << " "
+          << "wValue=0x"       << setup.wValue            << " "
+          << "wIndex=0x"       << setup.wIndex            << " "
+          << "wLength=0x"      << setup.wLength
+          << std::dec << std::endl;
+
+
+    if (setup.bRequest == 51) {
         auto ret = write(fd, "\002\000", 2);
         std::cout << "Got 51, write=" << ret << std::endl;
       } else if (setup.bRequest == 52) {
@@ -44,7 +69,8 @@ ssize_t ModeSwitcher::handleSwitchMessage(int fd, const void *buf,
 }
 
 void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
-  Gadget initialGadget(lib, 0x12d1, 0x107e, rr("initial_state"));
+  //Gadget initialGadget(lib, 0x12d1, 0x107e, rr("initial_state"));
+  Gadget initialGadget(lib, 0x18D1, 0x2D00, rr("initial_state2"));
   initialGadget.setStrings("TAG", "AAServer", sr("TAGAAS"));
 
   auto lun0path = (boost::filesystem::temp_directory_path() / rr("lun0"));
@@ -67,6 +93,7 @@ void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
 
   auto fd = open((tmpMountpoint / "ep0").c_str(), O_RDWR);
   write_descriptors_default(fd);
+  fdGlobal = fd;  // register for signal handler
 
   auto udc = Udc::getUdcById(lib, 0);
   initialGadget.enable(udc);
@@ -76,7 +103,9 @@ void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
   auto eSize = sizeof(struct usb_functionfs_event);
   auto bufSize = 4 * eSize;
   uint8_t buffer[bufSize];
-  for (;;) {
+
+  signal(SIGINT, signalHandler);
+  while (!stopFlag) {
     std::cout << "pre read" << std::endl;
     auto length = checkError(read(fd, buffer, bufSize), {EINTR, EAGAIN});
     std::cout << "post read: " << length << std::endl;
@@ -90,6 +119,7 @@ void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
     if (length == -1)
       break;
   }
+
   std::cout << "pre close fd" << std::endl;
   close(fd);
   std::cout << "post close fd" << std::endl;
