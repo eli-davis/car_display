@@ -166,24 +166,25 @@ uint8_t AaCommunicator::getChannelNumberByChannelType(ChannelType ct) {
 }
 
 void AaCommunicator::handleChannelMessage(const Message &message) {
-  auto msg = message.content;
-  const __u16 *shortView = (const __u16 *)(msg.data());
-  auto messageType = be16_to_cpu(shortView[0]);
-  {
-    std::unique_lock<std::mutex> lk(m);
-    if (message.channel != 0) {
-      auto handled =
-          this->channelHandlers[message.channel]->handleMessageFromHeadunit(
-              message);
-      if (!handled) {
-        throw aa_runtime_error(
-            fmt::format("Unknown packet on channel {0} with message type {1}",
-                        to_string(message.channel), to_string(messageType)));
-      }
-    } else {
-      gotMessage(-1, message.channel,
-                 message.flags & MessageTypeFlags::Specific, msg);
+  std::unique_lock<std::mutex> lk(m);
+
+  if (message.channel != 0) {
+    constexpr size_t numChannelHandlers = sizeof(channelHandlers) / sizeof(channelHandlers[0]);
+    if (message.channel >= numChannelHandlers || 
+      this->channelHandlers[message.channel] == nullptr) {
+      return; 
     }
+
+    bool handled =
+        this->channelHandlers[message.channel]->handleMessageFromHeadunit(
+            message);
+
+    if (!handled) {
+      ; // Explicitly do nothing.
+    }
+  } else {
+    gotMessage(-1, message.channel,
+               static_cast<bool>(message.flags & MessageTypeFlags::Specific), message.content);
   }
   cv.notify_all();
 }
@@ -248,6 +249,7 @@ void AaCommunicator::handleMessageContent(const Message &message) {
   MessageType messageType = (MessageType)be16_to_cpu(shortView[0]);
 
   cout << "received message type: " + std::to_string(messageType) << endl;
+  cout << "message channel: " << static_cast<int>(message.channel) << endl;
   cout << "handled message types are:" << endl;
   cout << MessageType::AudioFocusResponse << endl;
   cout << MessageType::NavigationFocusResponse << endl;
@@ -258,6 +260,7 @@ void AaCommunicator::handleMessageContent(const Message &message) {
   cout << MessageType::PingRequest << endl;
 
   if (message.channel != 0) {
+    cout << "handling channel message" << endl;
     handleChannelMessage(message);
   } else if (messageType == MessageType::AudioFocusResponse) {
     handleChannelMessage(message);
@@ -268,13 +271,14 @@ void AaCommunicator::handleMessageContent(const Message &message) {
     handleVersionRequest(shortView + 1, msg.size() - sizeof(__u16));
     cout << "version negotiation ok" << endl;
   } else if (messageType == MessageType::SslHandshake) {
-    std::cout << "AACOMM: SSL Handshake message received, CH=" << message.channel << " PAYLOAD_SIZE=" << msg.size() << std::endl;
+    cout << "AACOMM: SSL Handshake message received, CH=" << message.channel << " PAYLOAD_SIZE=" << msg.size() << std::endl;
     hexdump(msg.data(), std::min(msg.size(), (size_t)64), message.channel, "  SSL_CLIENT_HELLO_PAYLOAD: ");
     handleSslHandshake(shortView + 1, msg.size() - sizeof(__u16));
     cout << "SSL Handshake Successful" << endl;
   } else if (messageType == MessageType::AuthComplete) {
     cout << "auth complete" << endl;
     sendServiceDiscoveryRequest();
+    cout << "discovery request sent" << endl;
   } else if (messageType == MessageType::ServiceDiscoveryResponse) {
     cout << "got service discovery response" << endl;
     handleServiceDiscoveryResponse(shortView + 1, msg.size() - sizeof(__u16));
@@ -284,6 +288,7 @@ void AaCommunicator::handleMessageContent(const Message &message) {
   } else {
     cout << "unhandled message type: " + std::to_string(messageType) << endl;
   }
+  cout << "message handling done" << endl;
 }
 
 void AaCommunicator::handlePingRequest(const void *buf, size_t nbytes) {
@@ -412,10 +417,8 @@ ssize_t AaCommunicator::handleMessage(int fd, const void *buf, size_t nbytes) {
   message.flags = flags;
 
   if (encrypted) {
-    if (!ssl || !SSL_is_init_finished(ssl)) {
+    if (!ssl || !SSL_is_init_finished(ssl) || length == 0) {
       message.content.clear();
-    } else if (length == 0) { 
-      message.content.clear(); 
     } else {
       try {
         message.content = decryptMessage(msg_payload_content);
