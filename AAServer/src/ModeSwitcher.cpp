@@ -105,6 +105,15 @@ void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
   uint8_t buffer[bufSize];
 
   signal(SIGINT, signalHandler);
+
+  /*
+    The while loop below handles switching to accessory mode 
+    but the Desktop Head Unit output says it's already in accessory mode
+    At the moment the code behaves identically whether this while loop is 
+    included or not so I'm removing it for now  
+  */
+
+  /*
   while (!stopFlag) {
     std::cout << "pre read" << std::endl;
     auto length = checkError(read(fd, buffer, bufSize), {EINTR, EAGAIN});
@@ -119,6 +128,7 @@ void ModeSwitcher::handleSwitchToAccessoryMode(const Library &lib) {
     if (length == -1)
       break;
   }
+  */
 
   std::cout << "pre close fd" << std::endl;
   close(fd);

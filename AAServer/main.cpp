@@ -1,3 +1,5 @@
+// B"H
+
 // Distributed under GPLv3 only as specified in repository's root LICENSE file
 
 #include "AaCommunicator.h"
@@ -31,14 +33,14 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char *argv[]) {
-    if (std::system("sudo modprobe libcomposite") != 0)
-        std::cout << "Failed to load libcomposite\n";
+  if (std::system("sudo modprobe libcomposite") != 0)
+    std::cout << "Failed to load libcomposite\n";
 
-    if (std::system("sudo modprobe usb_f_fs") != 0)
-        std::cout << "Failed to load usb_f_fs\n";
+  if (std::system("sudo modprobe usb_f_fs") != 0)
+    std::cout << "Failed to load usb_f_fs\n";
 
-    if (std::system("sudo modprobe usb_f_mass_storage") != 0)
-        std::cout << "Failed to load usb_f_mass_storage\n";
+  if (std::system("sudo modprobe usb_f_mass_storage") != 0)
+    std::cout << "Failed to load usb_f_mass_storage\n";
 
   options_description desc("Allowed options");
   desc.add_options()("help", "produce help message")(
@@ -86,7 +88,7 @@ int main(int argc, char *argv[]) {
     mre.set();
   });
 
-  cout << "(4) AaCommunicator connect()" << endl;
+  cout << "(5) AaCommunicator connect()" << endl;
 
   map<SocketClient *, int> clients;
   int hi = 0;
@@ -106,9 +108,14 @@ int main(int argc, char *argv[]) {
         }
     }
   });
+
+  cout << "(6) data from head unit" << endl;
+
+  
   SocketCommunicator sc("./socket");
   int pi = 0;
   int clientCount = 0;
+
   sc.newClient.connect([&](SocketClient *scl) {
     clients.insert({scl, clientCount++});
     cout << "connect: " << clients[scl] << endl;
@@ -142,6 +149,11 @@ int main(int argc, char *argv[]) {
       clients.erase(scl);
     });
   });
+  
+  //while (!mre.wait_for(std::chrono::milliseconds(100))) {
+  //  // Loop lets SIGINT be delivered and handled
+  //}
+  cout << "(7) " << endl;
   mre.wait();
   return 0;
 }

@@ -37,6 +37,24 @@ using namespace std;
 using namespace boost::filesystem;
 using namespace tag::aas;
 
+void hexdump(const void* data, size_t size, int tid_fd = -1, const char* prefix = "") {
+    const unsigned char* p = static_cast<const unsigned char*>(data);
+    
+    // helper debug function
+    
+    if (tid_fd != -1) {
+        std::cerr << "[FD:" << tid_fd << "] ";
+    }
+    std::cerr << prefix;
+    for (size_t i = 0; i < size; ++i) {
+        if (i % 16 == 0 && i != 0) std::cerr << std::endl << "           " << prefix;
+        if (i % 16 == 0 && i == 0 && prefix[0] != '\0' && size > 16) std::cerr << std::endl << "           " << prefix;
+        std::cerr << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(p[i]) << " ";
+    }
+    std::cerr << std::dec << std::endl;
+    std::cerr.flush();
+}
+
 void AaCommunicator::logMessage(const Message &msg, bool direction) {
   if (!pdumper)
     return;
@@ -221,7 +239,24 @@ void AaCommunicator::handleMessageContent(const Message &message) {
   logMessage(message, false);
   auto msg = message.content;
   const __u16 *shortView = (const __u16 *)msg.data();
+
+  if (msg.size() < sizeof(__u16)) {
+    // ignore junk
+    return;
+  }
+
   MessageType messageType = (MessageType)be16_to_cpu(shortView[0]);
+
+  cout << "received message type: " + std::to_string(messageType) << endl;
+  cout << "handled message types are:" << endl;
+  cout << MessageType::AudioFocusResponse << endl;
+  cout << MessageType::NavigationFocusResponse << endl;
+  cout << MessageType::VersionRequest << endl;
+  cout << MessageType::SslHandshake << endl;
+  cout << MessageType::AuthComplete << endl;
+  cout << MessageType::ServiceDiscoveryResponse << endl;
+  cout << MessageType::PingRequest << endl;
+
   if (message.channel != 0) {
     handleChannelMessage(message);
   } else if (messageType == MessageType::AudioFocusResponse) {
@@ -233,7 +268,10 @@ void AaCommunicator::handleMessageContent(const Message &message) {
     handleVersionRequest(shortView + 1, msg.size() - sizeof(__u16));
     cout << "version negotiation ok" << endl;
   } else if (messageType == MessageType::SslHandshake) {
+    std::cout << "AACOMM: SSL Handshake message received, CH=" << message.channel << " PAYLOAD_SIZE=" << msg.size() << std::endl;
+    hexdump(msg.data(), std::min(msg.size(), (size_t)64), message.channel, "  SSL_CLIENT_HELLO_PAYLOAD: ");
     handleSslHandshake(shortView + 1, msg.size() - sizeof(__u16));
+    cout << "SSL Handshake Successful" << endl;
   } else if (messageType == MessageType::AuthComplete) {
     cout << "auth complete" << endl;
     sendServiceDiscoveryRequest();
@@ -244,8 +282,7 @@ void AaCommunicator::handleMessageContent(const Message &message) {
     cout << "got ping request" << endl;
     handlePingRequest(shortView + 1, msg.size() - sizeof(__u16));
   } else {
-    throw std::runtime_error("Unhandled message type: " +
-                             std::to_string(messageType));
+    cout << "unhandled message type: " + std::to_string(messageType) << endl;
   }
 }
 
@@ -256,7 +293,7 @@ void AaCommunicator::handlePingRequest(const void *buf, size_t nbytes) {
 
   tag::aas::PingResponse presp;
   presp.set_timestamp(preq.timestamp());
-  int bufSize = presp.ByteSize();
+  int bufSize = presp.ByteSizeLong();
   uint8_t buffer[bufSize];
   if (!presp.SerializeToArray(buffer, bufSize))
     throw aa_runtime_error("presp.SerializeToArray failed");
@@ -342,24 +379,81 @@ int AaCommunicator::verifyCertificate(int preverify_ok,
 }
 
 ssize_t AaCommunicator::handleMessage(int fd, const void *buf, size_t nbytes) {
-  const uint8_t *byteView = (const uint8_t *)buf;
+  if (nbytes < 4) {
+    return nbytes; 
+  }
+
+  const uint8_t *byteView = static_cast<const uint8_t *>(buf);
   int channel = byteView[0];
   int flags = byteView[1];
-  bool encrypted = flags & 0x8;
-  FrameType frameType = (FrameType)(flags & 0x3);
-  int lengthRaw = *(__u16 *)(byteView + 2);
-  int length = be16_to_cpu(*(__u16 *)(byteView + 2));
-  std::vector<uint8_t> msg;
-  if (nbytes < 4 + length)
-    throw std::runtime_error("nbytes<4+length");
-  std::copy(byteView + 4, byteView + 4 + length, std::back_inserter(msg));
+  bool encrypted = (flags & 0x8) != 0;
   Message message;
+
+  uint16_t lengthRaw_val = *reinterpret_cast<const uint16_t *>(byteView + 2);
+  int length = be16_to_cpu(lengthRaw_val); 
+
+  if (nbytes < 4 + static_cast<size_t>(length)) { 
+    return nbytes; 
+  }
+
+  std::vector<uint8_t> msg_payload_content; 
+  if (length > 0) {
+    try {
+      msg_payload_content.reserve(length); 
+      std::copy(byteView + 4, byteView + 4 + length, std::back_inserter(msg_payload_content));
+    } catch (const std::bad_alloc&) {
+      return nbytes; // Force fresh read
+    } catch (const std::exception&) { // Catching generic std::exception
+      return nbytes; // Force fresh read
+    }
+  }
+
   message.channel = channel;
   message.flags = flags;
-  message.content = encrypted ? decryptMessage(msg) : msg;
-  handleMessageContent(message);
-  return length + 4;
+
+  if (encrypted) {
+    if (!ssl || !SSL_is_init_finished(ssl)) {
+      message.content.clear();
+    } else if (length == 0) { 
+      message.content.clear(); 
+    } else {
+      try {
+        message.content = decryptMessage(msg_payload_content);
+      } catch (const std::exception& e) {
+        ERR_print_errors_fp(stderr); 
+        message.content.clear(); 
+      }
+    }
+  } else { 
+    message.content = msg_payload_content;
+  }
+  
+  handleMessageContent(message); 
+
+  ssize_t bytes_consumed = static_cast<ssize_t>(length) + 4;
+  return bytes_consumed;
 }
+
+// Original handleMessage for reference
+// ssize_t AaCommunicator::handleMessage(int fd, const void *buf, size_t nbytes) {
+//   const uint8_t *byteView = (const uint8_t *)buf;
+//   int channel = byteView[0];
+//   int flags = byteView[1];
+//   bool encrypted = flags & 0x8;
+//   FrameType frameType = (FrameType)(flags & 0x3);
+//   int lengthRaw = *(__u16 *)(byteView + 2);
+//   int length = be16_to_cpu(*(__u16 *)(byteView + 2));
+//   std::vector<uint8_t> msg;
+//   if (nbytes < 4 + length)
+//     throw std::runtime_error("nbytes<4+length");
+//   std::copy(byteView + 4, byteView + 4 + length, std::back_inserter(msg));
+//   Message message;
+//   message.channel = channel;
+//   message.flags = flags;
+//   message.content = encrypted ? decryptMessage(msg) : msg;
+//   handleMessageContent(message);
+//   return length + 4;
+// }
 
 ssize_t AaCommunicator::getMessage(int fd, void *buf, size_t nbytes) {
   std::unique_lock<std::mutex> lk(sendQueueMutex);

@@ -28,7 +28,7 @@ void InputChannelHandler::sendHandshakeRequest() {
        << endl;
   for (auto ab : available_buttons)
     handshakeRequest.add_available_buttons((tag::aas::ButtonCode_Enum)ab);
-  int bufSize = handshakeRequest.ByteSize();
+  int bufSize = handshakeRequest.ByteSizeLong();
   uint8_t buffer[bufSize];
   if (!handshakeRequest.SerializeToArray(buffer, bufSize))
     throw aa_runtime_error("handshakeRequest.SerializeToArray failed");
